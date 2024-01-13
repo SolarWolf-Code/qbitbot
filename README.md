@@ -34,5 +34,5 @@ Now you'll need to setup a Discord bot via the [Discord Developer Portal](https:
 After you've created your bot, you'll need to add it to your server and give it the `Send Messages`, `Read Message History`, and `Manage Messages` permission.
 
 ## Usage
-Once you've invited your bot, make sure it is online and type `/status` in any channel that the bot has access to.
+Once you've invited your bot, make sure it is online and type `/status` in any channel that the bot has access to.  
 ![/status command](images/status_ss.png)
