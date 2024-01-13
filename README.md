@@ -12,6 +12,7 @@ export USERNAME=YOUR_QBITTORRENT_CLIENT_USERNAME # e.g. admin
 export PASSWORD=YOUR_QBITTORRENT_CLIENT_PASSWORD # e.g. adminadmin
 export GUILD_ID=YOUR_DISCORD_SERVER_ID # e.g. 123456789012345678
 export TOKEN=YOUR_DISCORD_BOT_TOKEN # e.g. abcdefghijklmnopqrstuvwxyz.1234567890.abcdefghijklmnopqrstuvwxyz
+export ELEMENTS_PER_PAGE # e.g. 5
 ```
 
 Or you can use Docker:
@@ -25,6 +26,7 @@ docker run -d \
   -e PASSWORD=YOUR_QBITTORRENT_CLIENT_PASSWORD \
   -e GUILD_ID=YOUR_DISCORD_SERVER_ID \
   -e TOKEN=YOUR_DISCORD_BOT_TOKEN \
+  -e ELEMENTS_PER_PAGE \
   solarwolf/qbitbot
 ```
 

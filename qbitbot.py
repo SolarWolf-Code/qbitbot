@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 import qbittorrentapi
 import os
-import datetime
+from typing import Callable, Optional
 
 # Global variables
 HOST = os.environ.get('HOST')
@@ -11,6 +11,7 @@ USERNAME = os.environ.get('USERNAME')
 PASSWORD = os.environ.get('PASSWORD')
 GUILD_ID = os.environ.get('GUILD_ID')
 TOKEN = os.environ.get('TOKEN')
+ELEMENTS_PER_PAGE = int(os.environ.get('ELEMENTS_PER_PAGE'))
 
 
 # qBitTorrent client
@@ -42,54 +43,110 @@ def convert_time(seconds):
     else:
         return "inf"
 
+class Pagination(discord.ui.View):
+    def __init__(self, interaction: discord.Interaction, get_page: Callable):
+        self.interaction = interaction
+        self.get_page = get_page
+        self.total_pages: Optional[int] = None
+        self.index = 1
+        super().__init__(timeout=100)
 
-def get_downloading_torrents():
-    sending_embed = False
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user == self.interaction.user:
+            return True
+        else:
+            emb = discord.Embed(
+                description=f"Only the author of the command can perform this action.",
+                color=16711680
+            )
+            await interaction.response.send_message(embed=emb, ephemeral=True)
+            return False
 
-    embed = discord.Embed(
-            title="Download Status",
-            description="",
-            color=discord.Color.purple()
-    )
-        
-    for torrent in qbt_client.torrents_info():
-        state = torrent.state
-        if state != 'stalledUP' and state != "uploading":
-            sending_embed = True
-            embed.add_field(name="Name", value=torrent.name, inline=True)
-            embed.add_field(name="Progress/ETA", value=f"{str(round(torrent.progress*100,2))}% | {convert_time(torrent.eta)} ", inline=True)
+    async def navigate(self):
+        emb, self.total_pages = await self.get_page(self.index)
+        if self.total_pages == 1:
+            await self.interaction.response.send_message(embed=emb)
+        elif self.total_pages > 1:
+            self.update_buttons()
+            await self.interaction.response.send_message(embed=emb, view=self)
 
-            if state != "downloading":
-                embed.add_field(name="State", value=":red_square:", inline=True)
-            else:
-                embed.add_field(name="State", value=":green_square:", inline=True)
+    async def edit_page(self, interaction: discord.Interaction):
+        emb, self.total_pages = await self.get_page(self.index)
+        self.update_buttons()
+        await interaction.response.edit_message(embed=emb, view=self)
 
-    return embed, sending_embed
+    def update_buttons(self):
+        # Disable the start and previous buttons if we're on the first page
+        self.children[0].disabled = self.index == 1
+        self.children[1].disabled = self.index == 1
+
+        # Disable the next and end buttons if we're on the last page
+        self.children[2].disabled = self.index == self.total_pages
+        self.children[3].disabled = self.index == self.total_pages
+
+    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.blurple)
+    async def start(self, interaction: discord.Interaction, button: discord.Button):
+        self.index = 1
+        await self.edit_page(interaction)
+
+    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.blurple)
+    async def previous(self, interaction: discord.Interaction, button: discord.Button):
+        self.index -= 1
+        await self.edit_page(interaction)
+
+    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.blurple)
+    async def next(self, interaction: discord.Interaction, button: discord.Button):
+        self.index += 1
+        await self.edit_page(interaction)
+
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.blurple)
+    async def end(self, interaction: discord.Interaction, button: discord.Button):
+        self.index = self.total_pages
+        await self.edit_page(interaction)
+
+    async def on_timeout(self):
+        # remove buttons on timeout
+        message = await self.interaction.original_response()
+        await message.edit(view=None)
+
+    @staticmethod
+    def compute_total_pages(total_results: int, results_per_page: int) -> int:
+        return ((total_results - 1) // results_per_page) + 1
+
 
 
 @tree.command(name="status", description="Checks the downloads status of requested movies and shows currently downloading", guild=discord.Object(id=GUILD_ID))
 async def get_downloads(interaction):
-    # print the timestamp and the user that sent the command
-    print(f"{datetime.datetime.now()} - {interaction.user.name}#{interaction.user.discriminator} sent /status in #{interaction.channel.name} on {interaction.guild.name}")
+    sending_embed = False
 
-    # print the timestamp and say that you're deleting old bot messages
-    print(f"{datetime.datetime.now()} - Deleting old bot messages in #{interaction.channel.name} on {interaction.guild.name}")
-    await interaction.channel.purge(limit=100, check=lambda m: m.author == client.user)
+    torrents = {}
 
-    try:
-        embed, send_embed = get_downloading_torrents()
-        if send_embed:
-            await interaction.response.send_message(embed=embed)
-            # print the timestamp and say the message you sent
-            print(f"{datetime.datetime.now()} - Sent embedded message in #{interaction.channel.name} on {interaction.guild.name}")
-        else:
-            # print the timestamp and say the message you sent
-            print(f"{datetime.datetime.now()} - Sent 'There are no active downloads!' in #{interaction.channel.name} on {interaction.guild.name}")
-            await interaction.response.send_message("There are no active downloads!")
-    except Exception as e:
-        # print the timestamp and say the error that occurred
-        print(f"{datetime.datetime.now()} - An error occurred: {e}")
-        await interaction.response.send_message(f"An error occurred: {e}")
+    for torrent in qbt_client.torrents_info():
+        if torrent.state != 'stalledUP' and torrent.state != "uploading":
+            sending_embed = True
+            state_emote = ":green_square:"
+            if torrent.state != "downloading":
+                state_emote = ":red_square:"
+            torrents[torrent.name] = {
+                "progress": str(round(torrent.progress*100,2)),
+                "eta": f"{str(round(torrent.progress*100,2))}% | ETA: {convert_time(torrent.eta)}",
+                "state": state_emote
+            }
+
+    if sending_embed:
+        async def get_page(page: int):
+            emb = discord.Embed(title="Downloads", color=0x00ff00)
+            offset = (page-1) * ELEMENTS_PER_PAGE
+            for torrent in list(torrents.keys())[offset:offset+ELEMENTS_PER_PAGE]:
+                emb.add_field(name=torrent, value=f"{torrents[torrent]['state']} | {torrents[torrent]['eta']}", inline=False)
+
+            n = Pagination.compute_total_pages(len(torrents), ELEMENTS_PER_PAGE)
+            emb.set_footer(text=f"Page {page}/{n}")
+            return emb, n
+        await Pagination(interaction, get_page).navigate()
+    else:
+        await interaction.response.send_message("No downloads currently in progress.")
+
 
 
 @client.event
