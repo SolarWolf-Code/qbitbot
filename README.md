@@ -35,4 +35,4 @@ After you've created your bot, you'll need to add it to your server and give it 
 
 ## Usage
 Once you've invited your bot, make sure it is online and type `/status` in any channel that the bot has access to.
-![/status command](images/status_command.png)
+![/status command](images/status_ss.png)
